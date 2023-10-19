@@ -1,9 +1,8 @@
 import { Bot, InlineKeyboard, webhookCallback } from "grammy";
 import { chunk } from "lodash";
 import express from "express";
-import { applyTextEffect, Variant } from "./textEffects";
 
-import type { Variant as TextEffectVariant } from "./textEffects";
+console.log("Token: ", process.env.TELEGRAM_TOKEN);
 
 // Create a bot using the Telegram token
 const bot = new Bot(process.env.TELEGRAM_TOKEN || "");
@@ -11,177 +10,108 @@ const bot = new Bot(process.env.TELEGRAM_TOKEN || "");
 // Handle the /yo command to greet the user
 bot.command("yo", (ctx) => ctx.reply(`Yo ${ctx.from?.username}`));
 
-// Handle the /effect command to apply text effects using an inline keyboard
-type Effect = { code: TextEffectVariant; label: string };
-const allEffects: Effect[] = [
-  {
-    code: "w",
-    label: "Monospace",
-  },
-  {
-    code: "b",
-    label: "Bold",
-  },
-  {
-    code: "i",
-    label: "Italic",
-  },
-  {
-    code: "d",
-    label: "Doublestruck",
-  },
-  {
-    code: "o",
-    label: "Circled",
-  },
-  {
-    code: "q",
-    label: "Squared",
-  },
-];
+bot.command("start", (ctx) => ctx.reply("Wussup 2"));
+bot.on("message", async (ctx) => {
+  console.log(ctx.message.text);
+  const parts =
+    ctx?.message?.text?.split("/").map((message) => message.trim()) || "";
 
-const effectCallbackCodeAccessor = (effectCode: TextEffectVariant) =>
-  `effect-${effectCode}`;
+  // Extract the last word from the first part and the first word from the last part
+  const firstPartWords = parts[0].split(" ");
+  const lastPartWords = parts[parts.length - 1].split(" ");
 
-const effectsKeyboardAccessor = (effectCodes: string[]) => {
-  const effectsAccessor = (effectCodes: string[]) =>
-    effectCodes.map((code) =>
-      allEffects.find((effect) => effect.code === code)
-    );
-  const effects = effectsAccessor(effectCodes);
+  // Take the last word from the first part and the first word from the last part
+  const firstWord = firstPartWords.pop() || "Wussup";
+  const lastWord = lastPartWords.shift() || "Wussup";
 
-  const keyboard = new InlineKeyboard();
-  const chunkedEffects = chunk(effects, 3);
-  for (const effectsChunk of chunkedEffects) {
-    for (const effect of effectsChunk) {
-      effect &&
-        keyboard.text(effect.label, effectCallbackCodeAccessor(effect.code));
-    }
-    keyboard.row();
-  }
+  const text = `${firstPartWords.join(" ").trim()} _____ ${lastPartWords
+    .join(" ")
+    .trim()}`;
 
-  return keyboard;
-};
+  console.log(firstWord, lastWord, parts[1]);
 
-const textEffectResponseAccessor = (
-  originalText: string,
-  modifiedText?: string
-) =>
-  `Original: ${originalText}` +
-  (modifiedText ? `\nModified: ${modifiedText}` : "");
+  await ctx.reply(text, {
+    reply_markup: new InlineKeyboard()
+      .text(firstWord, "set 1")
+      .text(parts[1], "set 2")
+      .text(lastWord, "set 3"),
+  });
+});
 
-const parseTextEffectResponse = (
-  response: string
-): {
-  originalText: string;
-  modifiedText?: string;
-} => {
-  const originalText = (response.match(/Original: (.*)/) as any)[1];
-  const modifiedTextMatch = response.match(/Modified: (.*)/);
+bot.callbackQuery("set 1", async (ctx) => {
+  await ctx.answerCallbackQuery({});
 
-  let modifiedText;
-  if (modifiedTextMatch) modifiedText = modifiedTextMatch[1];
+  const chat_id = ctx?.msg?.chat.id || 5798889325;
+  const text = ctx?.callbackQuery?.message?.text || "Sorry";
 
-  if (!modifiedTextMatch) return { originalText };
-  else return { originalText, modifiedText };
-};
-
-bot.command("effect", (ctx) =>
-  ctx.reply(textEffectResponseAccessor(ctx.match), {
-    reply_markup: effectsKeyboardAccessor(
-      allEffects.map((effect) => effect.code)
-    ),
-  })
-);
-
-// Handle inline queries
-const queryRegEx = /effect (monospace|bold|italic) (.*)/;
-bot.inlineQuery(queryRegEx, async (ctx) => {
-  const fullQuery = ctx.inlineQuery.query;
-  const fullQueryMatch = fullQuery.match(queryRegEx);
-  if (!fullQueryMatch) return;
-
-  const effectLabel = fullQueryMatch[1];
-  const originalText = fullQueryMatch[2];
-
-  const effectCode = allEffects.find(
-    (effect) => effect.label.toLowerCase() === effectLabel.toLowerCase()
-  )?.code;
-  const modifiedText = applyTextEffect(originalText, effectCode as Variant);
-
-  await ctx.answerInlineQuery(
+  ctx.api.sendPoll(
+    chat_id,
+    text,
     [
-      {
-        type: "article",
-        id: "text-effect",
-        title: "Text Effects",
-        input_message_content: {
-          message_text: `Original: ${originalText}
-Modified: ${modifiedText}`,
-          parse_mode: "HTML",
-        },
-        reply_markup: new InlineKeyboard().switchInline("Share", fullQuery),
-        url: "http://t.me/EludaDevSmarterBot",
-        description: "Create stylish Unicode text, all within Telegram.",
-      },
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][0]?.text ||
+        "OOPS",
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][1]?.text ||
+        "OOPS",
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][2]?.text ||
+        "OOPS",
     ],
-    { cache_time: 30 * 24 * 3600 } // one month in seconds
+    {
+      is_anonymous: true,
+      type: "quiz",
+      correct_option_id: 0,
+    }
   );
 });
 
-// Return empty result list for other queries.
-bot.on("inline_query", (ctx) => ctx.answerInlineQuery([]));
+bot.callbackQuery("set 2", async (ctx) => {
+  await ctx.answerCallbackQuery({});
 
-// Handle text effects from the effect keyboard
-for (const effect of allEffects) {
-  const allEffectCodes = allEffects.map((effect) => effect.code);
+  const chat_id = ctx?.msg?.chat.id || 5798889325;
+  const text = ctx?.callbackQuery?.message?.text || "Sorry";
 
-  bot.callbackQuery(effectCallbackCodeAccessor(effect.code), async (ctx) => {
-    const { originalText } = parseTextEffectResponse(ctx.msg?.text || "");
-    const modifiedText = applyTextEffect(originalText, effect.code);
+  ctx.api.sendPoll(
+    chat_id,
+    text,
+    [
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][0]?.text ||
+        "OOPS",
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][1]?.text ||
+        "OOPS",
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][2]?.text ||
+        "OOPS",
+    ],
+    {
+      is_anonymous: true,
+      type: "quiz",
+      correct_option_id: 1,
+    }
+  );
+});
 
-    await ctx.editMessageText(
-      textEffectResponseAccessor(originalText, modifiedText),
-      {
-        reply_markup: effectsKeyboardAccessor(
-          allEffectCodes.filter((code) => code !== effect.code)
-        ),
-      }
-    );
-  });
-}
+bot.callbackQuery("set 3", async (ctx) => {
+  await ctx.answerCallbackQuery({});
 
-// Handle the /about command
-const aboutUrlKeyboard = new InlineKeyboard().url(
-  "Host your own bot for free.",
-  "https://cyclic.sh/"
-);
+  const chat_id = ctx?.msg?.chat.id || 5798889325;
+  const text = ctx?.callbackQuery?.message?.text || "Sorry";
 
-// Suggest commands in the menu
-bot.api.setMyCommands([
-  { command: "yo", description: "Be greeted by the bot" },
-  {
-    command: "effect",
-    description: "Apply text effects on the text. (usage: /effect [text])",
-  },
-]);
-
-// Handle all other messages and the /start command
-const introductionMessage = `Hello! I'm a Telegram bot.
-I'm powered by Cyclic, the next-generation serverless computing platform.
-
-<b>Commands</b>
-/yo - Be greeted by me
-/effect [text] - Show a keyboard to apply text effects to [text]`;
-
-const replyWithIntro = (ctx: any) =>
-  ctx.reply(introductionMessage, {
-    reply_markup: aboutUrlKeyboard,
-    parse_mode: "HTML",
-  });
-
-bot.command("start", replyWithIntro);
-bot.on("message", replyWithIntro);
+  ctx.api.sendPoll(
+    chat_id,
+    text,
+    [
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][0]?.text ||
+        "OOPS",
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][1]?.text ||
+        "OOPS",
+      ctx?.callbackQuery?.message?.reply_markup?.inline_keyboard[0][2]?.text ||
+        "OOPS",
+    ],
+    {
+      is_anonymous: true,
+      type: "quiz",
+      correct_option_id: 2,
+    }
+  );
+});
 
 // Start the server
 if (process.env.NODE_ENV === "production") {
